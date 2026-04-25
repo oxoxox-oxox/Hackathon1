@@ -391,11 +391,11 @@ class VRVocabularyApp {
             if (hasFolder) {
                 // Load from folder structure: /models/Word/Word1.glb or /models/Word/Word2.glb
                 modelUrl = `/models/${modelName}/${modelName}${modelIndex + 1}.glb`;
-                console.log(`Loading folder-based model ${modelIndex + 1}:`, modelUrl);
+                console.log(`🎯 Loading folder model ${modelIndex + 1} for ${modelName}: ${modelUrl}`);
             } else {
                 // Load single file structure: /models/Word_1.glb
                 modelUrl = `/models/${modelName}_1.glb`;
-                console.log('Loading single file model:', modelUrl);
+                console.log(`🎯 Loading single model for ${modelName}: ${modelUrl}`);
             }
 
             const gltf = await this.glftLoader.loadAsync(modelUrl);
@@ -426,7 +426,7 @@ class VRVocabularyApp {
             this.currentModelIndex = modelIndex;
             this.isSecondModel = modelIndex === 1;
 
-            console.log(`Model loaded successfully (index ${modelIndex}, second model: ${this.isSecondModel})`);
+            console.log(`✅ Model loaded: ${modelName} (index: ${modelIndex}, clickable: ${hasFolder})`);
             return model;
         } catch (error) {
             console.error('Error loading model:', error);
@@ -518,9 +518,24 @@ Interaction State: ${this.interactionState}
         });
         this.wordObjects = [];
 
-        // Remove model objects
+        // Remove model objects and properly dispose all resources
         this.modelObjects.forEach(obj => {
             this.scene.remove(obj);
+
+            // Recursively dispose all geometries and materials in the model hierarchy
+            obj.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(material => material.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+            });
         });
         this.modelObjects = [];
 
@@ -529,20 +544,22 @@ Interaction State: ${this.interactionState}
         // Reset model state variables
         this.currentModelIndex = 0;
         this.isSecondModel = false;
+
+        console.log('Scene cleared - all models removed');
     }
 
     onControllerSelect(event) {
         const controller = event.target;
 
-        // Debounce check to prevent multiple rapid triggers
+        // Debounce check to prevent multiple rapid triggers (reduced from 500ms to 250ms)
         const currentTime = Date.now();
-        if (currentTime - this.lastClickTime < this.clickDebounceTime) {
+        if (currentTime - this.lastClickTime < 250) {
             console.log('Click ignored - too soon since last click');
             return;
         }
         this.lastClickTime = currentTime;
 
-        console.log('Controller select event detected from:', controller.id);
+        console.log('🖱️ Controller select event from:', controller.id);
         this.debugInfo.lastInteraction = 'Controller Click';
         this.updateDebugPanel();
 
@@ -562,48 +579,59 @@ Interaction State: ${this.interactionState}
             ...this.uiElements
         ];
 
-        console.log('Interactable objects:', interactableObjects.length);
+        console.log('📊 Interactable objects:', interactableObjects.length);
 
         const intersections = this.raycaster.intersectObjects(interactableObjects, true);
-        console.log('Intersections found:', intersections.length);
+        console.log('🎯 Intersections found:', intersections.length);
 
         if (intersections.length > 0) {
             this.state = 'model';
             const object = intersections[0].object;
-            console.log('Hit object type:', object.userData.type);
 
-            if (object.userData.type === 'I-know-button') {
-                console.log('I Know button clicked - moving to next word directly');
-                this.debugInfo.lastInteraction = 'I Know Button Click';
-                this.nextWord(); // Go directly to next word
-            } else if (object.userData.type === 'not-sure-button') {
-                this.state = 'unsure';
-                console.log('Not Sure button clicked - switching to Unsure state');
-                this.debugInfo.lastInteraction = 'Not Sure Button Click';
-                this.handleNeedModel(); // Show model
+            // Find the object with userData (in case we hit a child mesh)
+            let targetObject = object;
+            while (targetObject && !targetObject.userData.type) {
+                targetObject = targetObject.parent;
             }
-            else if (object.userData.type === 'forget-button') {
-                this.state = 'forget';
-                console.log('Forget button clicked - switching to Forget state');
-                this.debugInfo.lastInteraction = 'Forget Button Click';
-                this.handleNeedModel(); // Show model
-            }
-            else if (object.userData.type === 'next-button') {
-                console.log('Next button clicked - moving to next word');
-                this.debugInfo.lastInteraction = 'Next Button Click';
-                this.nextWord(); // Go to next word
-            }
-            else if (object.userData.type === 'word') {
-                console.log('Word clicked - ignoring per requirements');
-                this.debugInfo.lastInteraction = 'Word Click (Ignored)';
-                // Word clicking is disabled per requirements - no action taken
-            } else if (object.userData.type === '3d-model') {
-                console.log('3D model clicked');
-                this.debugInfo.lastInteraction = 'Model Click';
-                this.onModelClick(object);
+
+            if (targetObject && targetObject.userData.type) {
+                console.log('✅ Hit object type:', targetObject.userData.type);
+
+                if (targetObject.userData.type === 'I-know-button') {
+                    console.log('👍 I Know button clicked');
+                    this.debugInfo.lastInteraction = 'I Know Button Click';
+                    this.nextWord(); // Go directly to next word
+                } else if (targetObject.userData.type === 'not-sure-button') {
+                    this.state = 'unsure';
+                    console.log('❓ Not Sure button clicked');
+                    this.debugInfo.lastInteraction = 'Not Sure Button Click';
+                    this.handleNeedModel(); // Show model
+                }
+                else if (targetObject.userData.type === 'forget-button') {
+                    this.state = 'forget';
+                    console.log('🔄 Forget button clicked');
+                    this.debugInfo.lastInteraction = 'Forget Button Click';
+                    this.handleNeedModel(); // Show model
+                }
+                else if (targetObject.userData.type === 'next-button') {
+                    console.log('➡️ Next button clicked');
+                    this.debugInfo.lastInteraction = 'Next Button Click';
+                    this.nextWord(); // Go to next word
+                }
+                else if (targetObject.userData.type === 'word') {
+                    console.log('ℹ️ Word clicked - ignoring per requirements');
+                    this.debugInfo.lastInteraction = 'Word Click (Ignored)';
+                    // Word clicking is disabled per requirements - no action taken
+                } else if (targetObject.userData.type === '3d-model') {
+                    console.log('🎮 3D model clicked');
+                    this.debugInfo.lastInteraction = 'Model Click';
+                    this.onModelClick(targetObject);
+                }
+            } else {
+                console.log('⚠️ Hit object but no userData found');
             }
         } else {
-            console.log('No intersection detected - pointing into empty space');
+            console.log('❌ No intersection detected - pointing into empty space');
         }
 
         this.updateDebugPanel();
@@ -638,42 +666,38 @@ Interaction State: ${this.interactionState}
         const hasFolder = modelObject.userData.hasFolderStructure;
         const currentModelIndex = modelObject.userData.modelIndex;
 
-        console.log(`Model clicked: ${modelName}, has folder: ${hasFolder}, current index: ${currentModelIndex}`);
+        console.log(`🖱️ Model clicked: ${modelName}, hasFolder: ${hasFolder}, current index: ${currentModelIndex}`);
 
         if (hasFolder) {
-            if (currentModelIndex === 0) {
-                // First model clicked - switch to second model
-                console.log('First model clicked - switching to second model');
+            // Calculate the next model index (toggle between 0 and 1)
+            const nextModelIndex = currentModelIndex === 0 ? 1 : 0;
+            console.log(`🔄 Switching from model ${currentModelIndex + 1} to model ${nextModelIndex + 1}`);
 
-                // Remove the first model
-                this.scene.remove(modelObject);
-                const index = this.modelObjects.indexOf(modelObject);
-                if (index > -1) {
-                    this.modelObjects.splice(index, 1);
-                }
-
-                // Clear resources
-                if (modelObject.geometry) modelObject.geometry.dispose();
-                if (modelObject.material) {
-                    if (Array.isArray(modelObject.material)) {
-                        modelObject.material.forEach(m => m.dispose());
-                    } else {
-                        modelObject.material.dispose();
-                    }
-                }
-
-                // Load and display the second model
-                await this.loadAndDisplayModel(modelName, 1);
-
-                console.log('Switched to second model for word:', modelName);
-            } else {
-                // Second model clicked - should not be clickable
-                console.log('Second model clicked - ignoring per requirements');
-                this.debugInfo.lastInteraction = 'Second Model Click (Ignored)';
+            // Remove the current model
+            this.scene.remove(modelObject);
+            const index = this.modelObjects.indexOf(modelObject);
+            if (index > -1) {
+                this.modelObjects.splice(index, 1);
             }
+
+            // Clear resources
+            if (modelObject.geometry) modelObject.geometry.dispose();
+            if (modelObject.material) {
+                if (Array.isArray(modelObject.material)) {
+                    modelObject.material.forEach(m => m.dispose());
+                } else {
+                    modelObject.material.dispose();
+                }
+            }
+
+            // Load and display the other model
+            await this.loadAndDisplayModel(modelName, nextModelIndex);
+
+            console.log(`✅ Successfully switched to model ${nextModelIndex + 1} for ${modelName}`);
+            this.debugInfo.lastInteraction = `Model ${nextModelIndex + 1} loaded`;
         } else {
             // Single file model clicked - log but no action needed
-            console.log('Single file model clicked - no action required');
+            console.log('ℹ️ Single file model clicked - no action required');
             this.debugInfo.lastInteraction = 'Single Model Click';
         }
     }
@@ -750,8 +774,11 @@ Interaction State: ${this.interactionState}
             }
         });
 
-        // Update raycaster positions
-        this.updateRaycasters();
+        // Update raycaster positions with frame skipping for performance
+        this.frameCounter = (this.frameCounter || 0) + 1;
+        if (this.frameCounter % 3 === 0) { // Only raycast every 3rd frame
+            this.updateRaycasters();
+        }
 
         this.renderer.render(this.scene, this.camera);
     }
@@ -780,17 +807,24 @@ Interaction State: ${this.interactionState}
 
                 const intersections = this.raycaster.intersectObjects(interactableObjects, true);
 
-                // Reset all object materials
-                interactableObjects.forEach(obj => {
-                    if (obj.material && obj.material.emissive) {
-                        obj.material.emissive.setHex(0x000000);
-                    }
-                });
-
-                // Highlight hovered objects
+                // Only highlight UI elements (buttons) - not models to save performance
+                const uiObjects = this.uiElements;
                 intersections.forEach(intersection => {
-                    if (intersection.object.material && intersection.object.material.emissive) {
-                        intersection.object.material.emissive.setHex(0x333333);
+                    if (intersection.object && intersection.object.userData &&
+                        intersection.object.userData.type &&
+                        intersection.object.userData.type.includes('button')) {
+
+                        // Reset all button materials
+                        uiObjects.forEach(obj => {
+                            if (obj.material && obj.material.emissive) {
+                                obj.material.emissive.setHex(0x000000);
+                            }
+                        });
+
+                        // Highlight hovered button
+                        if (intersection.object.material && intersection.object.material.emissive) {
+                            intersection.object.material.emissive.setHex(0x333333);
+                        }
                     }
                 });
             }
