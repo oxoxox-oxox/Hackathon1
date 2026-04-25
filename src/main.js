@@ -5,7 +5,7 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 
 class VRVocabularyApp {
     constructor() {
-        this.state = 'remember';
+        this.state = 'model';
         this.hasAnswered = false;
         this.scene = null;
         this.camera = null;
@@ -22,6 +22,12 @@ class VRVocabularyApp {
         this.relatedWordsModels = [];
         this.interactionState = 'word'; // 'word' or 'model'
 
+        // Model state management for folder-based models
+        this.currentModelIndex = 0; // tracks first (0) or second (1) model
+        this.isSecondModel = false; // tracks if currently showing second model
+        this.hasFolderStructure = {}; // cache which words have folder structures
+
+
         this.wordObjects = [];
         this.modelObjects = [];
         this.uiElements = [];
@@ -37,6 +43,10 @@ class VRVocabularyApp {
 
         this.isLoading = true;
         this.font = null;
+
+        // Debounce timing to prevent multiple button triggers
+        this.lastClickTime = 0;
+        this.clickDebounceTime = 500; // 500ms minimum between clicks
 
         this.init();
     }
@@ -278,7 +288,7 @@ class VRVocabularyApp {
         this.scene.add(this.ForgetButton);
 
         this.NextButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.NextButton.position.set(-0.8, 1, -2);
+        this.NextButton.position.set(0, 0.8, -2);
         this.NextButton.userData.type = 'next-button';
         this.scene.add(this.NextButton);
 
@@ -309,7 +319,8 @@ class VRVocabularyApp {
         this.uiElements.push(
             this.IKonwButton,
             this.NotSureButton,
-            this.ForgetButton
+            this.ForgetButton,
+            this.NextButton
         );
     }
 
@@ -370,10 +381,22 @@ class VRVocabularyApp {
         }
     }
 
-    async loadAndDisplayModel(modelName) {
+    async loadAndDisplayModel(modelName, modelIndex = 0) {
         try {
-            const modelUrl = `/models/${modelName}_1.glb`;
-            console.log('Loading model:', modelUrl);
+            let modelUrl;
+
+            // Check if word has folder structure
+            const hasFolder = this.checkFolderStructure(modelName);
+
+            if (hasFolder) {
+                // Load from folder structure: /models/Word/Word1.glb or /models/Word/Word2.glb
+                modelUrl = `/models/${modelName}/${modelName}${modelIndex + 1}.glb`;
+                console.log(`Loading folder-based model ${modelIndex + 1}:`, modelUrl);
+            } else {
+                // Load single file structure: /models/Word_1.glb
+                modelUrl = `/models/${modelName}_1.glb`;
+                console.log('Loading single file model:', modelUrl);
+            }
 
             const gltf = await this.glftLoader.loadAsync(modelUrl);
             const model = gltf.scene;
@@ -391,17 +414,30 @@ class VRVocabularyApp {
 
             model.userData.type = '3d-model';
             model.userData.modelName = modelName;
+            model.userData.modelIndex = modelIndex;
+            model.userData.isSecondModel = modelIndex === 1;
+            model.userData.hasFolderStructure = hasFolder;
 
             this.scene.add(model);
             this.currentWordModel = model;
             this.modelObjects.push(model);
 
-            console.log('Model loaded successfully');
+            // Update model state
+            this.currentModelIndex = modelIndex;
+            this.isSecondModel = modelIndex === 1;
+
+            console.log(`Model loaded successfully (index ${modelIndex}, second model: ${this.isSecondModel})`);
             return model;
         } catch (error) {
             console.error('Error loading model:', error);
             return null;
         }
+    }
+
+    checkFolderStructure(word) {
+        // Check if this word has a folder structure (multiple models)
+        const folderBasedWords = ['Transform', 'Shatter'];
+        return folderBasedWords.includes(word);
     }
 
     async displayRelatedWords(wordData) {
@@ -489,10 +525,23 @@ Interaction State: ${this.interactionState}
         this.modelObjects = [];
 
         this.currentWordModel = null;
+
+        // Reset model state variables
+        this.currentModelIndex = 0;
+        this.isSecondModel = false;
     }
 
     onControllerSelect(event) {
         const controller = event.target;
+
+        // Debounce check to prevent multiple rapid triggers
+        const currentTime = Date.now();
+        if (currentTime - this.lastClickTime < this.clickDebounceTime) {
+            console.log('Click ignored - too soon since last click');
+            return;
+        }
+        this.lastClickTime = currentTime;
+
         console.log('Controller select event detected from:', controller.id);
         this.debugInfo.lastInteraction = 'Controller Click';
         this.updateDebugPanel();
@@ -507,9 +556,8 @@ Interaction State: ${this.interactionState}
         // Set up raycaster from controller position and direction
         this.raycaster.set(controller.position, direction);
 
-        // Get all interactable objects
+        // Get all interactable objects (excluding word objects to prevent raycasting issues)
         const interactableObjects = [
-            ...this.wordObjects,
             ...this.modelObjects,
             ...this.uiElements
         ];
@@ -520,35 +568,30 @@ Interaction State: ${this.interactionState}
         console.log('Intersections found:', intersections.length);
 
         if (intersections.length > 0) {
+            this.state = 'model';
             const object = intersections[0].object;
             console.log('Hit object type:', object.userData.type);
 
             if (object.userData.type === 'I-know-button') {
-                this.state = 'remember';
-                console.log('I Know button clicked - switching to Remember state');
+                console.log('I Know button clicked - moving to next word directly');
                 this.debugInfo.lastInteraction = 'I Know Button Click';
-                this.NotSureButton.visible = true;
-                this.ForgetButton.visible = true;
+                this.nextWord(); // Go directly to next word
             } else if (object.userData.type === 'not-sure-button') {
                 this.state = 'unsure';
                 console.log('Not Sure button clicked - switching to Unsure state');
                 this.debugInfo.lastInteraction = 'Not Sure Button Click';
-                // Button hiding is now handled by handleNeedModel()
+                this.handleNeedModel(); // Show model
             }
             else if (object.userData.type === 'forget-button') {
                 this.state = 'forget';
                 console.log('Forget button clicked - switching to Forget state');
                 this.debugInfo.lastInteraction = 'Forget Button Click';
-                // Button hiding is now handled by handleNeedModel()
+                this.handleNeedModel(); // Show model
             }
             else if (object.userData.type === 'next-button') {
                 console.log('Next button clicked - moving to next word');
-                this.NextButton.visible = false; // Hide the Next button after clicking
                 this.debugInfo.lastInteraction = 'Next Button Click';
-                this.nextWord();
-                this.NotSureButton.visible = true;
-                this.ForgetButton.visible = true;
-                this.IKonwButton.visible = true;
+                this.nextWord(); // Go to next word
             }
             else if (object.userData.type === 'word') {
                 console.log('Word clicked - ignoring per requirements');
@@ -561,12 +604,6 @@ Interaction State: ${this.interactionState}
             }
         } else {
             console.log('No intersection detected - pointing into empty space');
-        }
-        if (this.state == 'remember') {
-            this.nextWord();
-        }
-        else {
-            this.handleNeedModel();
         }
 
         this.updateDebugPanel();
@@ -596,6 +633,51 @@ Interaction State: ${this.interactionState}
         console.log('Model loaded and Next button shown for word:', wordData.word);
     }
 
+    async onModelClick(modelObject) {
+        const modelName = modelObject.userData.modelName;
+        const hasFolder = modelObject.userData.hasFolderStructure;
+        const currentModelIndex = modelObject.userData.modelIndex;
+
+        console.log(`Model clicked: ${modelName}, has folder: ${hasFolder}, current index: ${currentModelIndex}`);
+
+        if (hasFolder) {
+            if (currentModelIndex === 0) {
+                // First model clicked - switch to second model
+                console.log('First model clicked - switching to second model');
+
+                // Remove the first model
+                this.scene.remove(modelObject);
+                const index = this.modelObjects.indexOf(modelObject);
+                if (index > -1) {
+                    this.modelObjects.splice(index, 1);
+                }
+
+                // Clear resources
+                if (modelObject.geometry) modelObject.geometry.dispose();
+                if (modelObject.material) {
+                    if (Array.isArray(modelObject.material)) {
+                        modelObject.material.forEach(m => m.dispose());
+                    } else {
+                        modelObject.material.dispose();
+                    }
+                }
+
+                // Load and display the second model
+                await this.loadAndDisplayModel(modelName, 1);
+
+                console.log('Switched to second model for word:', modelName);
+            } else {
+                // Second model clicked - should not be clickable
+                console.log('Second model clicked - ignoring per requirements');
+                this.debugInfo.lastInteraction = 'Second Model Click (Ignored)';
+            }
+        } else {
+            // Single file model clicked - log but no action needed
+            console.log('Single file model clicked - no action required');
+            this.debugInfo.lastInteraction = 'Single Model Click';
+        }
+    }
+
     onControllerSelectStart(event) {
         console.log('Controller select start event');
         this.debugInfo.lastInteraction = 'Controller Press Start';
@@ -620,22 +702,25 @@ Interaction State: ${this.interactionState}
 
         this.hasAnswered = false;
 
-        // Step 1: Hide Next button
+        // Step 1: Reset state for new word
+        this.state = 'remember';
+
+        // Step 2: Hide Next button
         this.NextButton.visible = false;
 
-        // Step 2: Force cleanup of previous word's models and text
+        // Step 3: Force cleanup of previous word's models and text
         this.clearScene();
 
-        // Step 3: Move to next word (with wraparound)
+        // Step 4: Move to next word (with wraparound)
         this.currentWordIndex =
             (this.currentWordIndex + 1) % this.wordsData.length;
 
         const nextWord = this.wordsData[this.currentWordIndex];
 
-        // Step 4: Display the new word
+        // Step 5: Display the new word
         await this.displayWord(nextWord);
 
-        // Step 5: Show all three buttons (Know, Unsure, Forget)
+        // Step 6: Show all three buttons (Know, Unsure, Forget)
         this.IKonwButton.visible = true;
         this.NotSureButton.visible = true;
         this.ForgetButton.visible = true;
@@ -687,9 +772,8 @@ Interaction State: ${this.interactionState}
                 // Set raycaster from controller position and direction
                 this.raycaster.set(controller.position, direction);
 
-                // Visual feedback - highlight objects under cursor
+                // Visual feedback - highlight objects under cursor (excluding word objects)
                 const interactableObjects = [
-                    ...this.wordObjects,
                     ...this.modelObjects,
                     ...this.uiElements
                 ];
