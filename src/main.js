@@ -46,10 +46,15 @@ class VRVocabularyApp {
         this.setupLights();
         this.setupControllers();
         this.setupXR();
-        this.loadWordsData();
+
+        // ❗必须等待数据
+        await this.loadWordsData();
         await this.loadFont();
+
         this.setupUI();
-        this.startFirstWord();
+
+        await this.startFirstWord(); // ❗也建议 await
+
         this.hideLoadingScreen();
         this.animate();
     }
@@ -214,12 +219,17 @@ class VRVocabularyApp {
         try {
             const response = await fetch('/api/words');
             const result = await response.json();
-            if (result.success) {
+
+            if (result.success && Array.isArray(result.data)) {
                 this.wordsData = result.data;
-                console.log('Words data loaded:', this.wordsData);
+            } else {
+                console.error('words data invalid');
+                this.wordsData = [];
             }
+
         } catch (error) {
             console.error('Error loading words data:', error);
+            this.wordsData = [];
         }
     }
 
@@ -275,7 +285,7 @@ class VRVocabularyApp {
         this.NextButton.visible = false; // Initially hidden
 
         // Add "Next" text
-        const createLabel = (text, x) => {
+        const createLabel = (text, x, y) => {
             const geo = new TextGeometry(text, {
                 font: this.font,
                 size: 0.05,
@@ -287,14 +297,14 @@ class VRVocabularyApp {
                 new THREE.MeshStandardMaterial({ color: 0xffffff })
             );
 
-            mesh.position.set(x - 0.15, 1.1, -2);
+            mesh.position.set(x, y, -2);
             this.scene.add(mesh);
             this.uiElements.push(mesh);
         };
 
-        createLabel('Know', -0.6);
-        createLabel('Unsure', 0);
-        createLabel('Forget', 0.6);
+        createLabel('Know', -0.8, 1.2);
+        createLabel('Unsure', 0, 1.4);
+        createLabel('Forget', 0.8, 1.2);
 
         this.uiElements.push(
             this.IKonwButton,
@@ -304,6 +314,11 @@ class VRVocabularyApp {
     }
 
     async startFirstWord() {
+        if (!this.font) {
+            console.warn('Font not loaded yet');
+            return;
+        }
+
         if (this.wordsData.length === 0) {
             console.error('No words data available');
             return;
@@ -311,6 +326,10 @@ class VRVocabularyApp {
 
         this.currentWordIndex = 0;
         await this.displayWord(this.wordsData[0]);
+
+        // Ensure the word is visible by waiting a bit for rendering
+        await new Promise(resolve => setTimeout(resolve, 100));
+        console.log('First word displayed:', this.wordsData[0].word);
     }
 
     async displayWord(wordData) {
@@ -514,17 +533,13 @@ Interaction State: ${this.interactionState}
                 this.state = 'unsure';
                 console.log('Not Sure button clicked - switching to Unsure state');
                 this.debugInfo.lastInteraction = 'Not Sure Button Click';
-                this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
-                this.ForgetButton.visible = false; // Hide the Forget button after clicking
-                this.IKonwButton.visible = false;
+                // Button hiding is now handled by handleNeedModel()
             }
             else if (object.userData.type === 'forget-button') {
                 this.state = 'forget';
                 console.log('Forget button clicked - switching to Forget state');
                 this.debugInfo.lastInteraction = 'Forget Button Click';
-                this.ForgetButton.visible = false; // Hide the Forget button after clicking
-                this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
-                this.IKonwButton.visible = false;
+                // Button hiding is now handled by handleNeedModel()
             }
             else if (object.userData.type === 'next-button') {
                 console.log('Next button clicked - moving to next word');
@@ -536,9 +551,9 @@ Interaction State: ${this.interactionState}
                 this.IKonwButton.visible = true;
             }
             else if (object.userData.type === 'word') {
-                console.log('Word clicked');
-                this.debugInfo.lastInteraction = 'Word Click';
-                this.onWordClick(object);
+                console.log('Word clicked - ignoring per requirements');
+                this.debugInfo.lastInteraction = 'Word Click (Ignored)';
+                // Word clicking is disabled per requirements - no action taken
             } else if (object.userData.type === '3d-model') {
                 console.log('3D model clicked');
                 this.debugInfo.lastInteraction = 'Model Click';
@@ -564,19 +579,21 @@ Interaction State: ${this.interactionState}
 
         const wordData = this.wordsData[this.currentWordIndex];
 
-        // ❗ 关键：先清模型
-        this.clearScene();
-
-        // 隐藏按钮
+        // Step 1: Hide all three buttons first
         this.IKonwButton.visible = false;
         this.NotSureButton.visible = false;
         this.ForgetButton.visible = false;
 
-        // 加载模型
+        // Step 2: Clear the scene (remove word and any existing models)
+        this.clearScene();
+
+        // Step 3: Load and display the model
         await this.loadAndDisplayModel(wordData.word);
 
-        // 显示 Next
-        this.nextButton.visible = true;
+        // Step 4: Show the Next button
+        this.NextButton.visible = true;
+
+        console.log('Model loaded and Next button shown for word:', wordData.word);
     }
 
     onControllerSelectStart(event) {
@@ -587,23 +604,7 @@ Interaction State: ${this.interactionState}
         this.onControllerSelect(event);
     }
 
-    async onWordClick(wordObject) {
-        const wordData = wordObject.userData.wordData;
-        console.log('Word clicked:', wordData.word);
-
-        // Remove word text and load 3D model
-        this.ForgetButton.visible = false; // Hide the Forget button after clicking
-        this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
-        this.IKonwButton.visible = false;
-        this.interactionState = 'model';
-
-        // Load and display the 3D model
-        await this.loadAndDisplayModel(wordData.word);
-    }
-
-    showNextButton() {
-        this.nextButton.visible = true;
-    }
+    // onWordClick method has been removed per requirements - word clicking is disabled
 
     async showRelatedWords(wordData) {
         // Remove current model and show related words' models
@@ -619,17 +620,27 @@ Interaction State: ${this.interactionState}
 
         this.hasAnswered = false;
 
-        // ❗ 强制清理上一词所有模型/文字
+        // Step 1: Hide Next button
+        this.NextButton.visible = false;
+
+        // Step 2: Force cleanup of previous word's models and text
         this.clearScene();
 
-        this.nextButton.visible = false;
-
+        // Step 3: Move to next word (with wraparound)
         this.currentWordIndex =
             (this.currentWordIndex + 1) % this.wordsData.length;
 
         const nextWord = this.wordsData[this.currentWordIndex];
 
+        // Step 4: Display the new word
         await this.displayWord(nextWord);
+
+        // Step 5: Show all three buttons (Know, Unsure, Forget)
+        this.IKonwButton.visible = true;
+        this.NotSureButton.visible = true;
+        this.ForgetButton.visible = true;
+
+        console.log('Advanced to next word:', nextWord.word);
     }
 
     hideLoadingScreen() {
