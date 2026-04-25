@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -I http://localhost:3000/models/Skeleton_1.glb)"
+    ]
+  }
+}
