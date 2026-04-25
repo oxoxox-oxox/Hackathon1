@@ -558,22 +558,25 @@ Interaction State: ${this.interactionState}
     }
 
     async handleNeedModel() {
-        if (this.hasAnswered) return; // 防止重复点
+        if (this.hasAnswered) return;
 
         this.hasAnswered = true;
 
         const wordData = this.wordsData[this.currentWordIndex];
 
-        // 清除文字
+        // ❗ 关键：先清模型
+        this.clearScene();
+
+        // 隐藏按钮
         this.IKonwButton.visible = false;
         this.NotSureButton.visible = false;
         this.ForgetButton.visible = false;
 
-        // 显示模型
+        // 加载模型
         await this.loadAndDisplayModel(wordData.word);
 
-        // 显示 Next 按钮
-        this.showNextButton();
+        // 显示 Next
+        this.nextButton.visible = true;
     }
 
     onControllerSelectStart(event) {
@@ -613,12 +616,19 @@ Interaction State: ${this.interactionState}
     }
 
     async nextWord() {
+
         this.hasAnswered = false;
+
+        // ❗ 强制清理上一词所有模型/文字
+        this.clearScene();
 
         this.nextButton.visible = false;
 
-        this.currentWordIndex = (this.currentWordIndex + 1) % this.wordsData.length;
+        this.currentWordIndex =
+            (this.currentWordIndex + 1) % this.wordsData.length;
+
         const nextWord = this.wordsData[this.currentWordIndex];
+
         await this.displayWord(nextWord);
     }
 
