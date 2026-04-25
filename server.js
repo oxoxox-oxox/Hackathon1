@@ -81,10 +81,11 @@ app.get('/api/words/:word', (req, res) => {
 });
 
 // Serve 3D models
-app.get('/models/:filename', (req, res) => {
+app.get('/models/*', (req, res) => {
     try {
-        const filename = req.params.filename;
-        const filePath = path.join(__dirname, 'model', filename);
+        // Get the full path after /models/
+        const modelPath = req.params[0];
+        const filePath = path.join(__dirname, 'model', modelPath);
 
         // Check if file exists
         if (!fs.existsSync(filePath)) {
@@ -95,6 +96,7 @@ app.get('/models/:filename', (req, res) => {
         }
 
         // Set appropriate headers for GLB files
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache models for 1 hour
         res.setHeader('Content-Type', 'model/gltf-binary');
         res.sendFile(filePath);
     } catch (error) {
