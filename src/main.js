@@ -5,7 +5,7 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 
 class VRVocabularyApp {
     constructor() {
-        this.state = 'remember';
+        this.state = 'model';
         this.hasAnswered = false;
         this.scene = null;
         this.camera = null;
@@ -37,6 +37,10 @@ class VRVocabularyApp {
 
         this.isLoading = true;
         this.font = null;
+
+        // Debounce timing to prevent multiple button triggers
+        this.lastClickTime = 0;
+        this.clickDebounceTime = 500; // 500ms minimum between clicks
 
         this.init();
     }
@@ -278,7 +282,7 @@ class VRVocabularyApp {
         this.scene.add(this.ForgetButton);
 
         this.NextButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.NextButton.position.set(-0.8, 1, -2);
+        this.NextButton.position.set(0, 0.8, -2);
         this.NextButton.userData.type = 'next-button';
         this.scene.add(this.NextButton);
 
@@ -493,6 +497,15 @@ Interaction State: ${this.interactionState}
 
     onControllerSelect(event) {
         const controller = event.target;
+
+        // Debounce check to prevent multiple rapid triggers
+        const currentTime = Date.now();
+        if (currentTime - this.lastClickTime < this.clickDebounceTime) {
+            console.log('Click ignored - too soon since last click');
+            return;
+        }
+        this.lastClickTime = currentTime;
+
         console.log('Controller select event detected from:', controller.id);
         this.debugInfo.lastInteraction = 'Controller Click';
         this.updateDebugPanel();
@@ -507,9 +520,8 @@ Interaction State: ${this.interactionState}
         // Set up raycaster from controller position and direction
         this.raycaster.set(controller.position, direction);
 
-        // Get all interactable objects
+        // Get all interactable objects (excluding word objects to prevent raycasting issues)
         const interactableObjects = [
-            ...this.wordObjects,
             ...this.modelObjects,
             ...this.uiElements
         ];
@@ -520,6 +532,7 @@ Interaction State: ${this.interactionState}
         console.log('Intersections found:', intersections.length);
 
         if (intersections.length > 0) {
+            this.state = 'model';
             const object = intersections[0].object;
             console.log('Hit object type:', object.userData.type);
 
@@ -565,7 +578,7 @@ Interaction State: ${this.interactionState}
         if (this.state == 'remember') {
             this.nextWord();
         }
-        else {
+        else if (this.state === 'unsure' || this.state === 'forget') {
             this.handleNeedModel();
         }
 
@@ -687,9 +700,8 @@ Interaction State: ${this.interactionState}
                 // Set raycaster from controller position and direction
                 this.raycaster.set(controller.position, direction);
 
-                // Visual feedback - highlight objects under cursor
+                // Visual feedback - highlight objects under cursor (excluding word objects)
                 const interactableObjects = [
-                    ...this.wordObjects,
                     ...this.modelObjects,
                     ...this.uiElements
                 ];
