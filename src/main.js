@@ -46,7 +46,7 @@ class VRVocabularyApp {
         this.setupLights();
         this.setupControllers();
         this.setupXR();
-        await this.loadWordsData();
+        this.loadWordsData();
         await this.loadFont();
         this.setupUI();
         this.startFirstWord();
@@ -246,68 +246,61 @@ class VRVocabularyApp {
     }
 
     createVRUI() {
+        // Create "Next" button in VR
         const buttonGeometry = new THREE.BoxGeometry(0.5, 0.2, 0.1);
-        const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0x667eea, roughness: 0.3 });
-
-        // 定义三个主按钮的位置（y 相同，x 不同）
+        const buttonMaterial = new THREE.MeshStandardMaterial({
+            color: 0x667eea,
+            roughness: 0.3
+        });
         this.IKonwButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.IKonwButton.position.set(-0.9, 1, -1.8);
+        this.IKonwButton.position.set(-0.8, 1, -2);
         this.IKonwButton.userData.type = 'I-know-button';
         this.scene.add(this.IKonwButton);
 
         this.NotSureButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.NotSureButton.position.set(0, 1, -1.8);
+        this.NotSureButton.position.set(0, 1.2, -2);
         this.NotSureButton.userData.type = 'not-sure-button';
         this.scene.add(this.NotSureButton);
 
         this.ForgetButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.ForgetButton.position.set(0.9, 1, -1.8);
+        this.ForgetButton.position.set(0.8, 1, -2);
         this.ForgetButton.userData.type = 'forget-button';
         this.scene.add(this.ForgetButton);
 
-        // Next 按钮（更靠近地面）
         this.NextButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.NextButton.position.set(0, 0.4, -1.8);
+        this.NextButton.position.set(-0.8, 1, -2);
         this.NextButton.userData.type = 'next-button';
         this.scene.add(this.NextButton);
-        this.NextButton.visible = false;
 
-        // 文字标签：直接放在按钮前方（z偏移 -0.05）或作为独立Sprite
-        const createLabel = (text, parentButton, offsetX = 0, offsetY = 0) => {
-            // 为了简单，这里使用3D文本；如果字体加载失败，会降级为Canvas（见后文）
-            if (!this.font) return;
+        this.NextButton.visible = false; // Initially hidden
+
+        // Add "Next" text
+        const createLabel = (text, x) => {
             const geo = new TextGeometry(text, {
                 font: this.font,
-                size: 0.08,
+                size: 0.05,
                 height: 0.01
             });
-            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
-            mesh.position.copy(parentButton.position);
-            mesh.position.x += offsetX;
-            mesh.position.y += 0.12; // 按钮上方
-            mesh.position.z -= 0.05; // 前方一点
+
+            const mesh = new THREE.Mesh(
+                geo,
+                new THREE.MeshStandardMaterial({ color: 0xffffff })
+            );
+
+            mesh.position.set(x - 0.15, 1.1, -2);
             this.scene.add(mesh);
             this.uiElements.push(mesh);
         };
 
-        if (this.font) {
-            this.KnowLetter = createLabel('Know', this.IKonwButton, -0.17, 0.0);
-            this.NotSureLetter = createLabel('Unsure', this.NotSureButton, -0.17, 0.0);
-            this.ForgetLetter = createLabel('Forget', this.ForgetButton, -0.17, 0.0);
-            this.NextLetter = createLabel('Next', this.NextButton, -0.16, 0.0);
-        }
+        createLabel('Know', -0.6);
+        createLabel('Unsure', 0);
+        createLabel('Forget', 0.6);
 
-        // 将所有交互元素加入数组（保证射线检测）
         this.uiElements.push(
             this.IKonwButton,
             this.NotSureButton,
-            this.ForgetButton,
-            this.NextButton
+            this.ForgetButton
         );
-
-        this.NextLetter.visible = false; // 隐藏 Next 标签，直到需要显示
-
-
     }
 
     async startFirstWord() {
@@ -350,13 +343,12 @@ class VRVocabularyApp {
                 roughness: 0.3
             });
             const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-            textMesh.position.set(-0.8, 2, -2);
+            textMesh.position.set(0, 2, -2);
             textMesh.userData.type = 'word';
             textMesh.userData.wordData = wordData;
             this.scene.add(textMesh);
             this.wordObjects.push(textMesh);
         }
-        await new Promise(resolve => requestAnimationFrame(resolve));
     }
 
     async loadAndDisplayModel(modelName) {
@@ -513,7 +505,11 @@ Interaction State: ${this.interactionState}
             console.log('Hit object type:', object.userData.type);
 
             if (object.userData.type === 'I-know-button') {
-                this.nextWord();
+                this.state = 'remember';
+                console.log('I Know button clicked - switching to Remember state');
+                this.debugInfo.lastInteraction = 'I Know Button Click';
+                this.NotSureButton.visible = true;
+                this.ForgetButton.visible = true;
             } else if (object.userData.type === 'not-sure-button') {
                 this.state = 'unsure';
                 console.log('Not Sure button clicked - switching to Unsure state');
@@ -539,7 +535,11 @@ Interaction State: ${this.interactionState}
                 this.ForgetButton.visible = true;
                 this.IKonwButton.visible = true;
             }
-            else if (object.userData.type === '3d-model') {
+            else if (object.userData.type === 'word') {
+                console.log('Word clicked');
+                this.debugInfo.lastInteraction = 'Word Click';
+                this.onWordClick(object);
+            } else if (object.userData.type === '3d-model') {
                 console.log('3D model clicked');
                 this.debugInfo.lastInteraction = 'Model Click';
                 this.onModelClick(object);
@@ -547,7 +547,10 @@ Interaction State: ${this.interactionState}
         } else {
             console.log('No intersection detected - pointing into empty space');
         }
-        if (this.state == 'unsure' || this.state == 'forget') {
+        if (this.state == 'remember') {
+            this.nextWord();
+        }
+        else {
             this.handleNeedModel();
         }
 
@@ -566,10 +569,6 @@ Interaction State: ${this.interactionState}
         this.NotSureButton.visible = false;
         this.ForgetButton.visible = false;
 
-        this.KnowLetter.visible = false;
-        this.NotSureLetter.visible = false;
-        this.ForgetLetter.visible = false;
-
         // 显示模型
         await this.loadAndDisplayModel(wordData.word);
 
@@ -585,8 +584,22 @@ Interaction State: ${this.interactionState}
         this.onControllerSelect(event);
     }
 
+    async onWordClick(wordObject) {
+        const wordData = wordObject.userData.wordData;
+        console.log('Word clicked:', wordData.word);
+
+        // Remove word text and load 3D model
+        this.ForgetButton.visible = false; // Hide the Forget button after clicking
+        this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
+        this.IKonwButton.visible = false;
+        this.interactionState = 'model';
+
+        // Load and display the 3D model
+        await this.loadAndDisplayModel(wordData.word);
+    }
+
     showNextButton() {
-        this.NextButton.visible = true;
+        this.nextButton.visible = true;
     }
 
     async showRelatedWords(wordData) {
@@ -600,12 +613,9 @@ Interaction State: ${this.interactionState}
     }
 
     async nextWord() {
-        setTimeout(() => {
-            console.log('一秒后执行');
-        }, 1000);
         this.hasAnswered = false;
 
-        this.NextButton.visible = false;
+        this.nextButton.visible = false;
 
         this.currentWordIndex = (this.currentWordIndex + 1) % this.wordsData.length;
         const nextWord = this.wordsData[this.currentWordIndex];
