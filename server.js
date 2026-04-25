@@ -6,18 +6,21 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0'; // Allow LAN access
+const wordsFilePath = path.join(__dirname, 'words.json');
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Load words data
-let wordsData;
+function loadWordsData() {
+    const wordsContent = fs.readFileSync(wordsFilePath, 'utf8');
+    return JSON.parse(wordsContent);
+}
+
 try {
-    const wordsContent = fs.readFileSync(path.join(__dirname, 'words.json'), 'utf8');
-    wordsData = JSON.parse(wordsContent);
-    console.log('✅ Words data loaded successfully');
+    const wordsData = loadWordsData();
+    console.log(`✅ Words data loaded successfully (${wordsData.length} words)`);
 } catch (error) {
     console.error('❌ Error loading words.json:', error);
     process.exit(1);
@@ -28,6 +31,12 @@ try {
 // Get all words
 app.get('/api/words', (req, res) => {
     try {
+        // Add cache control headers to prevent browser caching
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
+        const wordsData = loadWordsData();
         res.json({
             success: true,
             data: wordsData
@@ -43,6 +52,12 @@ app.get('/api/words', (req, res) => {
 // Get specific word
 app.get('/api/words/:word', (req, res) => {
     try {
+        // Add cache control headers to prevent browser caching
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
+        const wordsData = loadWordsData();
         const word = req.params.word;
         const wordData = wordsData.find(w => w.word.toLowerCase() === word.toLowerCase());
 
@@ -92,6 +107,12 @@ app.get('/models/:filename', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+    // Add cache control headers to prevent browser caching
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    const wordsData = loadWordsData();
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
