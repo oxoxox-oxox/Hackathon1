@@ -5,6 +5,8 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 
 class VRVocabularyApp {
     constructor() {
+        this.state = 'remember';
+        this.hasAnswered = false;
         this.scene = null;
         this.camera = null;
         this.renderer = null;
@@ -250,29 +252,55 @@ class VRVocabularyApp {
             color: 0x667eea,
             roughness: 0.3
         });
-        this.nextButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-        this.nextButton.position.set(0, 1, -2);
-        this.nextButton.userData.type = 'next-button';
-        this.scene.add(this.nextButton);
+        this.IKonwButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+        this.IKonwButton.position.set(-0.8, 1, -2);
+        this.IKonwButton.userData.type = 'I-know-button';
+        this.scene.add(this.IKonwButton);
+
+        this.NotSureButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+        this.NotSureButton.position.set(0, 1.2, -2);
+        this.NotSureButton.userData.type = 'not-sure-button';
+        this.scene.add(this.NotSureButton);
+
+        this.ForgetButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+        this.ForgetButton.position.set(0.8, 1, -2);
+        this.ForgetButton.userData.type = 'forget-button';
+        this.scene.add(this.ForgetButton);
+
+        this.NextButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+        this.NextButton.position.set(-0.8, 1, -2);
+        this.NextButton.userData.type = 'next-button';
+        this.scene.add(this.NextButton);
+
+        this.NextButton.visible = false; // Initially hidden
 
         // Add "Next" text
-        if (this.font) {
-            const textGeometry = new TextGeometry('Next', {
+        const createLabel = (text, x) => {
+            const geo = new TextGeometry(text, {
                 font: this.font,
                 size: 0.05,
-                height: 0.01,
-                curveSegments: 12,
-                bevelEnabled: false
+                height: 0.01
             });
-            const textMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
-            const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-            textMesh.position.set(-0.1, 1.1, -2);
-            textMesh.userData.type = 'next-button-text';
-            this.scene.add(textMesh);
-            this.uiElements.push(textMesh);
-        }
 
-        this.uiElements.push(this.nextButton);
+            const mesh = new THREE.Mesh(
+                geo,
+                new THREE.MeshStandardMaterial({ color: 0xffffff })
+            );
+
+            mesh.position.set(x - 0.15, 1.1, -2);
+            this.scene.add(mesh);
+            this.uiElements.push(mesh);
+        };
+
+        createLabel('Know', -0.6);
+        createLabel('Unsure', 0);
+        createLabel('Forget', 0.6);
+
+        this.uiElements.push(
+            this.IKonwButton,
+            this.NotSureButton,
+            this.ForgetButton
+        );
     }
 
     async startFirstWord() {
@@ -339,7 +367,7 @@ class VRVocabularyApp {
             const scale = 1.5 / maxDim;
             model.scale.set(scale, scale, scale);
 
-            model.position.set(0, 1.5, -3);
+            model.position.set(0, 3, -3);
             model.rotation.y = 0;
 
             model.userData.type = '3d-model';
@@ -476,11 +504,38 @@ Interaction State: ${this.interactionState}
             const object = intersections[0].object;
             console.log('Hit object type:', object.userData.type);
 
-            if (object.userData.type === 'next-button') {
-                console.log('Next button clicked');
-                this.debugInfo.lastInteraction = 'Next Button';
+            if (object.userData.type === 'I-know-button') {
+                this.state = 'remember';
+                console.log('I Know button clicked - switching to Remember state');
+                this.debugInfo.lastInteraction = 'I Know Button Click';
+                this.NotSureButton.visible = true;
+                this.ForgetButton.visible = true;
+            } else if (object.userData.type === 'not-sure-button') {
+                this.state = 'unsure';
+                console.log('Not Sure button clicked - switching to Unsure state');
+                this.debugInfo.lastInteraction = 'Not Sure Button Click';
+                this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
+                this.ForgetButton.visible = false; // Hide the Forget button after clicking
+                this.IKonwButton.visible = false;
+            }
+            else if (object.userData.type === 'forget-button') {
+                this.state = 'forget';
+                console.log('Forget button clicked - switching to Forget state');
+                this.debugInfo.lastInteraction = 'Forget Button Click';
+                this.ForgetButton.visible = false; // Hide the Forget button after clicking
+                this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
+                this.IKonwButton.visible = false;
+            }
+            else if (object.userData.type === 'next-button') {
+                console.log('Next button clicked - moving to next word');
+                this.NextButton.visible = false; // Hide the Next button after clicking
+                this.debugInfo.lastInteraction = 'Next Button Click';
                 this.nextWord();
-            } else if (object.userData.type === 'word') {
+                this.NotSureButton.visible = true;
+                this.ForgetButton.visible = true;
+                this.IKonwButton.visible = true;
+            }
+            else if (object.userData.type === 'word') {
                 console.log('Word clicked');
                 this.debugInfo.lastInteraction = 'Word Click';
                 this.onWordClick(object);
@@ -492,8 +547,33 @@ Interaction State: ${this.interactionState}
         } else {
             console.log('No intersection detected - pointing into empty space');
         }
+        if (this.state == 'remember') {
+            this.nextWord();
+        }
+        else {
+            this.handleNeedModel();
+        }
 
         this.updateDebugPanel();
+    }
+
+    async handleNeedModel() {
+        if (this.hasAnswered) return; // 防止重复点
+
+        this.hasAnswered = true;
+
+        const wordData = this.wordsData[this.currentWordIndex];
+
+        // 清除文字
+        this.IKonwButton.visible = false;
+        this.NotSureButton.visible = false;
+        this.ForgetButton.visible = false;
+
+        // 显示模型
+        await this.loadAndDisplayModel(wordData.word);
+
+        // 显示 Next 按钮
+        this.showNextButton();
     }
 
     onControllerSelectStart(event) {
@@ -509,24 +589,17 @@ Interaction State: ${this.interactionState}
         console.log('Word clicked:', wordData.word);
 
         // Remove word text and load 3D model
-        this.clearScene();
+        this.ForgetButton.visible = false; // Hide the Forget button after clicking
+        this.NotSureButton.visible = false; // Hide the Not Sure button after clicking
+        this.IKonwButton.visible = false;
         this.interactionState = 'model';
 
         // Load and display the 3D model
         await this.loadAndDisplayModel(wordData.word);
     }
 
-    async onModelClick(modelObject) {
-        const wordData = modelObject.userData.wordData;
-        console.log('Model clicked:', wordData?.word || modelObject.userData.modelName);
-
-        if (modelObject.userData.relatedWord) {
-            // Clicked on a related word model - show that word
-            await this.displayWord(modelObject.userData.relatedWord);
-        } else {
-            // Clicked on the main word model - show related words
-            await this.showRelatedWords(wordData);
-        }
+    showNextButton() {
+        this.nextButton.visible = true;
     }
 
     async showRelatedWords(wordData) {
@@ -534,10 +607,16 @@ Interaction State: ${this.interactionState}
         this.clearScene();
 
         // Display related words' models
-        await this.displayRelatedWords(wordData);
+        await Promise.all(
+            relatedWords.map(w => this.loadAndDisplayModel(w.word))
+        );
     }
 
     async nextWord() {
+        this.hasAnswered = false;
+
+        this.nextButton.visible = false;
+
         this.currentWordIndex = (this.currentWordIndex + 1) % this.wordsData.length;
         const nextWord = this.wordsData[this.currentWordIndex];
         await this.displayWord(nextWord);
@@ -624,3 +703,4 @@ window.addEventListener('load', () => {
 window.addEventListener('resize', () => {
     // Handle resize if needed
 });
+
