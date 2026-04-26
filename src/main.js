@@ -51,6 +51,23 @@ class VRVocabularyApp {
         this.init();
     }
 
+    playWordAudio(word) {
+        // 如果当前有正在播放的音频，先停止它以防止重音
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio.currentTime = 0;
+        }
+
+        // 拼接音频路径
+        const audioUrl = `/sound/${word}.mp3`;
+        this.currentAudio = new Audio(audioUrl);
+
+        // 播放音频并捕获可能的自动播放限制报错
+        this.currentAudio.play().catch(error => {
+            console.warn(`音频播放失败 (${word}): 可能是由于浏览器的自动播放策略（需要用户先有点击交互才能发声）。`, error);
+        });
+    }
+
     async init() {
         this.setupScene();
         this.setupLights();
@@ -295,7 +312,7 @@ class VRVocabularyApp {
         this.NextButton.visible = false; // Initially hidden
 
         // Add "Next" text
-        const createLabel = (text, x, y) => {
+        const createLabel = (text, x, y, z) => {
             const geo = new TextGeometry(text, {
                 font: this.font,
                 size: 0.05,
@@ -307,14 +324,18 @@ class VRVocabularyApp {
                 new THREE.MeshStandardMaterial({ color: 0xffffff })
             );
 
-            mesh.position.set(x, y, -2);
+            mesh.position.set(x, y, z);
             this.scene.add(mesh);
             this.uiElements.push(mesh);
+            return geo;
         };
 
-        createLabel('Know', -0.8, 1.2);
-        createLabel('Unsure', 0, 1.4);
-        createLabel('Forget', 0.8, 1.2);
+        this.KnowLetter = createLabel('Know', -0.9, 1.0, -1.9);
+        this.UnsureLetter = createLabel('Unsure', -0.1, 1.2, -1.9);
+        this.ForgetLetter = createLabel('Forget', 0.7, 1.0, -1.9);
+        this.NextLetter = createLabel('Next', -0.1, 0.8, -1.9);
+
+        this.NextButton.visible = false; // Initially hide Next button
 
         this.uiElements.push(
             this.IKonwButton,
@@ -352,6 +373,8 @@ class VRVocabularyApp {
 
         // Update info panel
         this.updateInfoPanel(wordData);
+
+        this.playWordAudio(wordData.word);
     }
 
     async createWordDisplay(wordData) {
@@ -649,6 +672,10 @@ Interaction State: ${this.interactionState}
         this.NotSureButton.visible = false;
         this.ForgetButton.visible = false;
 
+        this.KnowLetter.visible = false;
+        this.UnsureLetter.visible = false;
+        this.ForgetLetter.visible = false;
+
         // Step 2: Clear the scene (remove word and any existing models)
         this.clearScene();
 
@@ -731,6 +758,7 @@ Interaction State: ${this.interactionState}
 
         // Step 2: Hide Next button
         this.NextButton.visible = false;
+        this.NextLetter.visible = false;
 
         // Step 3: Force cleanup of previous word's models and text
         this.clearScene();
@@ -748,6 +776,10 @@ Interaction State: ${this.interactionState}
         this.IKonwButton.visible = true;
         this.NotSureButton.visible = true;
         this.ForgetButton.visible = true;
+
+        this.KnowLetter.visible = true;
+        this.UnsureLetter.visible = true;
+        this.ForgetLetter.visible = true;
 
         console.log('Advanced to next word:', nextWord.word);
     }
