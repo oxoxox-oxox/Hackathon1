@@ -49,6 +49,23 @@ class VRVocabularyApp {
         this.clickDebounceTime = 500; // 500ms minimum between clicks
 
         this.init();
+
+        playWordAudio(word) ;{
+            // 如果当前有正在播放的音频，先停止它以防止重音
+            if (this.currentAudio) {
+                this.currentAudio.pause();
+                this.currentAudio.currentTime = 0;
+            }
+
+            // 拼接音频路径
+            const audioUrl = `/sound/${word}.mp3`;
+            this.currentAudio = new Audio(audioUrl);
+
+            // 播放音频并捕获可能的自动播放限制报错
+            this.currentAudio.play().catch(error => {
+                console.warn(`音频播放失败 (${word}): 可能是由于浏览器的自动播放策略（需要用户先有点击交互才能发声）。`, error);
+                });
+        }
     }
 
     async init() {
@@ -352,6 +369,8 @@ class VRVocabularyApp {
 
         // Update info panel
         this.updateInfoPanel(wordData);
+
+        this.playWordAudio(wordData.word);
     }
 
     async createWordDisplay(wordData) {
